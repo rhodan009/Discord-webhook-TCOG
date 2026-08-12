@@ -1,0 +1,17 @@
+name: An N — Calendrier Doré
+
+on:
+  schedule:
+    # Chaque lundi à 08:00 UTC. Ajuste selon ton fuseau :
+    # 08:00 UTC = 10:00 en France/Belgique (heure d'été) ou 09:00 (heure d'hiver).
+    - cron: "0 8 * * 1"
+  workflow_dispatch: {}   # bouton "Run workflow" pour tester manuellement
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 poster_an_n.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
