@@ -17,6 +17,7 @@ identiquement en cron local ou en tâche planifiée.
 import os
 import random
 import urllib.request
+import urllib.error
 import json
 from datetime import date, timedelta
 
@@ -67,12 +68,21 @@ def envoyer(webhook_url: str, payload: dict) -> None:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         webhook_url, data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            # Sans ceci, Cloudflare renvoie parfois 403 sur le
+            # User-Agent par défaut d'urllib ("Python-urllib/3.x").
+            "User-Agent": "TheCityOfGold-AnN-Bot/1.0 (+https://thecityofgold.net)",
+        },
         method="POST",
     )
-    with urllib.request.urlopen(req) as resp:
-        if resp.status not in (200, 204):
-            raise RuntimeError(f"Discord a répondu {resp.status}")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            if resp.status not in (200, 204):
+                raise RuntimeError(f"Discord a répondu {resp.status}")
+    except urllib.error.HTTPError as e:
+        corps = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Discord a répondu {e.code}: {corps}") from e
 
 
 def main() -> None:
