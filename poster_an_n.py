@@ -1,106 +1,105 @@
 #!/usr/bin/env python3
 """
-The City of Gold — publication automatique de l'An N.
+The City of Gold - automatic weekly posting of Year N.
 
-Calcule l'année dorée en cours (An 0 = lundi 13 octobre 2025, +1 par
-lundi réel) et publie l'embed hebdomadaire dans #calendrier-dore.
+Works out the current golden year (Year 0 = Monday 13 October 2025, +1 per
+real Monday) and posts the weekly embed to #golden-calendar via webhook.
 
-UTILISATION LOCALE (test)
+LOCAL USE (testing)
   export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
-  python3 poster_an_n.py
+  python3 post_year_n.py
 
-Conçu pour tourner chaque lundi via GitHub Actions (voir le workflow
-.github/workflows/an-n.yml fourni séparément) — mais fonctionne
-identiquement en cron local ou en tâche planifiée.
+Designed to run every Monday via GitHub Actions (see the accompanying
+workflow .github/workflows/year-n.yml) - but works identically as a local
+cron job or scheduled task.
 """
 
 import os
 import random
 import urllib.request
-import urllib.error
 import json
-from datetime import date, timedelta
+from datetime import date
 
-# ---------------------------------------------------------------- réglages
+# ------------------------------------------------------------------ settings
 
-EPOCH = date(2025, 10, 13)          # Lundi — An 0, Jour 0
+EPOCH = date(2025, 10, 13)          # Monday - Year 0, Day 0
 GOLD = 13214247                     # #C9A227
 
-AMORCES = [
-    "Votre Maison a une devise. Laquelle ?",
-    "Un juge condamne à mort le fils d'un allié. Que faites-vous ?",
-    "Votre comté n'a pas de sel. Vous négociez, ou vous vous en passez ?",
-    "Faut-il pouvoir destituer un roi ?",
-    "Quel métier prendriez-vous le premier jour ?",
-    "Un maréchal arrête un membre de votre Institution. Vous intervenez ?",
-    "Votre Religion perd son dernier fidèle ailleurs. Que retenez-vous de son histoire ?",
-    "Un comté voisin vous propose une alliance. Qu'exigez-vous en retour ?",
+PROMPTS = [
+    "Your House has a motto. What is it?",
+    "An institution's constitution cannot be rewritten. Which clause would you never risk getting wrong?",
+    "A hundred signatures found a religion. One believer keeps it alive. Which would be harder to hold on to?",
+    "No county can stand on its own. Would you rather sit on the trade route, or on the mine?",
+    "Only a court can end a character for good. Would you accept being a judge?",
+    "You pay to school a child who is not yet yours to play. What do you teach them first?",
+    "Ten citizens found a hamlet. Who are the nine others you would pick?",
+    "A title with no recognition is worth little more than a statement. What earns recognition?",
+    "Succession can be planned, or left to chance. Which do you trust less?",
+    "Marshals investigate, judges decide. Which office would you rather never hold?",
+    "Elections run forty-eight hours. Long enough, or an invitation to campaign?",
+    "Your character has eighty weeks. What must be finished before the fiftieth?",
 ]
 
-# ------------------------------------------------------------------ calcul
-
-def annee_doree(aujourdhui: date) -> int:
-    """Nombre de lundis écoulés depuis l'An 0 (inclus)."""
-    jours_ecoules = (aujourdhui - EPOCH).days
-    return max(0, jours_ecoules // 7)
+# --------------------------------------------------------------------- logic
 
 
-def prochaine_amorce(numero_annee: int) -> str:
-    """Rotation déterministe : la même An N donne toujours la même amorce."""
-    rng = random.Random(numero_annee)
-    return rng.choice(AMORCES)
+def golden_year(today: date) -> int:
+    """Number of complete real weeks elapsed since the epoch Monday."""
+    return (today - EPOCH).days // 7
 
 
-def construire_payload(numero_annee: int, amorce: str) -> dict:
+def weekly_prompt(n: int) -> str:
+    """Pick a prompt. Seeded on the year, so a rerun the same Monday
+    produces exactly the same message rather than a second, different one."""
+    rng = random.Random(n)
+    return rng.choice(PROMPTS)
+
+
+def build_payload(n: int, prompt: str) -> dict:
     return {
         "content": None,
         "embeds": [
             {
-                "title": f"⚜️  An {numero_annee} du Calendrier Doré",
-                "description": f"Une nouvelle année s'ouvre sur Arkadia.\n\n*{amorce}*",
+                "title": f"\u269c\ufe0f  Year {n} of the Golden Calendar",
+                "description": (
+                    "A new year opens over Arkadia.\n\n"
+                    f"*{prompt}*"
+                ),
                 "color": GOLD,
             }
         ],
     }
 
 
-def envoyer(webhook_url: str, payload: dict) -> None:
+def send(webhook_url: str, payload: dict) -> None:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        webhook_url, data=data,
-        headers={
-            "Content-Type": "application/json",
-            # Sans ceci, Cloudflare renvoie parfois 403 sur le
-            # User-Agent par défaut d'urllib ("Python-urllib/3.x").
-            "User-Agent": "TheCityOfGold-AnN-Bot/1.0 (+https://thecityofgold.net)",
-        },
+        webhook_url,
+        data=data,
+        headers={"Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            if resp.status not in (200, 204):
-                raise RuntimeError(f"Discord a répondu {resp.status}")
-    except urllib.error.HTTPError as e:
-        corps = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Discord a répondu {e.code}: {corps}") from e
+    with urllib.request.urlopen(req) as response:
+        if response.status not in (200, 204):
+            raise RuntimeError(f"Discord returned status {response.status}")
 
 
 def main() -> None:
     webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not webhook_url:
-        raise SystemExit("Variable DISCORD_WEBHOOK_URL manquante.")
+        raise SystemExit("DISCORD_WEBHOOK_URL is not set.")
 
     today = date.today()
-    n = annee_doree(today)
-    amorce = prochaine_amorce(n)
-    payload = construire_payload(n, amorce)
+    n = golden_year(today)
+    prompt = weekly_prompt(n)
+    payload = build_payload(n, prompt)
 
-    print(f"Date réelle : {today.isoformat()}")
-    print(f"An {n} du Calendrier Doré")
-    print(f"Amorce : {amorce}")
+    print(f"Real date : {today.isoformat()}")
+    print(f"Year {n} of the Golden Calendar")
+    print(f"Prompt    : {prompt}")
 
-    envoyer(webhook_url, payload)
-    print("Message envoyé.")
+    send(webhook_url, payload)
+    print("Message sent.")
 
 
 if __name__ == "__main__":
